@@ -5,7 +5,7 @@
 (function(){
 "use strict";
 
-const LS_KEY = "vestidor_v2";
+const LS_KEY = "vestidor_v1";
 const today = () => new Date().toISOString().slice(0,10);
 
 /* ---------------- estado en memoria ---------------- */
