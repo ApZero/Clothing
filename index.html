@@ -83,6 +83,10 @@
       <p class="view-subtitle">Anotá qué te pusiste y para qué.</p>
 
       <div class="card form-card">
+        <div id="reg-edit-banner" class="edit-banner hidden">
+          <span>✎ Editando un registro existente</span>
+          <button id="btn-cancelar-edicion" class="text-link">Cancelar</button>
+        </div>
         <label class="field-label" for="reg-fecha">Fecha</label>
         <input type="date" id="reg-fecha" class="field-input">
 
@@ -91,7 +95,8 @@
 
         <label class="field-label">Prendas usadas</label>
         <div id="reg-categorias-tabs" class="subtabs"></div>
-        <div id="reg-items-picker" class="picker-grid"></div>
+        <div id="reg-tipo-filtro" class="chip-row chip-row-tight"></div>
+        <div id="reg-items-picker" class="picker-list"></div>
 
         <div class="seleccionados" id="reg-seleccionados-wrap" style="display:none">
           <span class="field-label" style="margin:0">Seleccionado:</span>

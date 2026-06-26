@@ -5,7 +5,7 @@
 (function(){
 "use strict";
 
-const LS_KEY = "vestidor_v1";
+const LS_KEY = "vestidor_v2";
 const today = () => new Date().toISOString().slice(0,10);
 
 /* ---------------- estado en memoria ---------------- */
@@ -555,10 +555,16 @@ function esc(s){
 let regFecha = today();
 let regActividadesSel = [];
 let regCategoriaTab = "Arriba";
+let regTipoFiltro = null;
 let regItemsSel = [];
+let regEditingId = null;
 
 function renderRegistro(){
   document.getElementById("reg-fecha").value = regFecha;
+
+  const banner = document.getElementById("reg-edit-banner");
+  banner.classList.toggle("hidden", !regEditingId);
+  document.getElementById("btn-guardar-registro").textContent = regEditingId ? "Guardar cambios" : "Guardar registro";
 
   const actWrap = document.getElementById("reg-actividades");
   actWrap.innerHTML = state.usos.map(u=>
@@ -576,20 +582,41 @@ function renderRegistro(){
     `<button class="subtab ${regCategoriaTab===c?"active":""}" data-tab="${c}">${c}</button>`
   ).join("");
   document.getElementById("reg-categorias-tabs").querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
-    regCategoriaTab = b.dataset.tab; renderRegistro();
+    regCategoriaTab = b.dataset.tab; regTipoFiltro = null; renderRegistro();
   }));
 
+  const tiposEnCategoria = [...new Set(
+    state.items.filter(i=>i.activo && i.categoria===regCategoriaTab).map(i=>i.tipo)
+  )].sort((a,b)=>a.localeCompare(b));
+  const tipoWrap = document.getElementById("reg-tipo-filtro");
+  if(tiposEnCategoria.length > 1){
+    tipoWrap.innerHTML = `<button class="chip-sm ${!regTipoFiltro?"selected":""}" data-tipo="">Todos</button>` +
+      tiposEnCategoria.map(t=>`<button class="chip-sm ${regTipoFiltro===t?"selected":""}" data-tipo="${esc(t)}">${esc(t)}</button>`).join("");
+    tipoWrap.querySelectorAll("[data-tipo]").forEach(b=>b.addEventListener("click",()=>{
+      regTipoFiltro = b.dataset.tipo || null; renderRegistro();
+    }));
+  } else {
+    tipoWrap.innerHTML = "";
+  }
+
   const stats = allStats();
-  const itemsCat = activeItems().filter(i=>i.categoria===regCategoriaTab)
-    .sort((a,b)=> (stats[a.id].daysSince??99999) > (stats[b.id].daysSince??99999) ? -1 : 1);
+  let itemsCat = activeItems().filter(i=>i.categoria===regCategoriaTab);
+  if(regTipoFiltro) itemsCat = itemsCat.filter(i=>i.tipo===regTipoFiltro);
+  itemsCat = itemsCat.sort((a,b)=> (stats[a.id].daysSince??99999) > (stats[b.id].daysSince??99999) ? -1 : 1);
   const picker = document.getElementById("reg-items-picker");
-  picker.innerHTML = itemsCat.length ? itemsCat.map(it=>`
-    <div class="picker-item ${regItemsSel.includes(it.id)?"selected":""}" data-id="${it.id}">
-      <div class="code">${esc(it.id)}</div>
-      <div class="name">${esc(it.tipo)}${it.color?" "+esc(it.color):""}</div>
-    </div>
-  `).join("") : `<span class="field-hint">No tenés prendas activas en esta categoría.</span>`;
-  picker.querySelectorAll(".picker-item").forEach(el=>el.addEventListener("click",()=>{
+  picker.innerHTML = itemsCat.length ? itemsCat.map(it=>{
+    const sub = [it.marca, it.color, it.talle].filter(Boolean).join(" · ") || "Sin más detalles";
+    return `
+    <div class="picker-row ${regItemsSel.includes(it.id)?"selected":""}" data-id="${it.id}">
+      <div class="thumb-sm">${it.fotoUrl?`<img src="${it.fotoUrl}" alt="">`:thumbPlaceholderSVG(it.categoria)}</div>
+      <div class="info">
+        <div class="top-line"><span class="tag-badge">${esc(it.id)}</span><span class="name">${esc(it.tipo)}</span></div>
+        <div class="sub">${esc(sub)}</div>
+      </div>
+      <div class="check">✓</div>
+    </div>`;
+  }).join("") : `<span class="field-hint">No tenés prendas activas en esta categoría.</span>`;
+  picker.querySelectorAll(".picker-row").forEach(el=>el.addEventListener("click",()=>{
     const id = el.dataset.id;
     const i = regItemsSel.indexOf(id);
     if(i>-1) regItemsSel.splice(i,1); else regItemsSel.push(id);
@@ -601,7 +628,8 @@ function renderRegistro(){
     wrap.style.display = "block";
     document.getElementById("reg-seleccionados").innerHTML = regItemsSel.map(id=>{
       const it = getItem(id);
-      return `<span class="chip selected" data-remove="${id}">${esc(it?it.tipo:id)} ✕</span>`;
+      const etiqueta = it ? [it.tipo, it.marca||it.color].filter(Boolean).join(" · ") : id;
+      return `<span class="chip selected" data-remove="${id}">${esc(etiqueta)} ✕</span>`;
     }).join("");
     document.getElementById("reg-seleccionados").querySelectorAll("[data-remove]").forEach(el=>el.addEventListener("click",()=>{
       regItemsSel = regItemsSel.filter(id=>id!==el.dataset.remove);
@@ -614,26 +642,30 @@ function renderRegistro(){
   renderHistorialReciente();
 }
 
-function renderHistorialReciente(){
-  const lista = state.log.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,12);
-  const wrap = document.getElementById("reg-historial");
-  if(!lista.length){
-    wrap.innerHTML = `<p class="field-hint">Todavía no registraste ningún uso.</p>`;
-    return;
-  }
-  wrap.innerHTML = lista.map(l=>{
-    const nombres = l.itemIds.map(id=>{ const it=getItem(id); return it? it.tipo : id; }).join(", ");
-    const acts = (l.actividades||[]).map(usoNombre).join(", ");
-    return `<div class="historial-item" data-id="${l.id}">
-      <span class="fecha mono">${fmtDate(l.fecha,{day:"2-digit",month:"2-digit"})}</span>
-      <span class="detalle"><b>${esc(acts)}</b> — ${esc(nombres)}</span>
-      <button data-del="${l.id}" title="Eliminar">✕</button>
-    </div>`;
-  }).join("");
-  wrap.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",(e)=>{
+function historialItemHTML(l){
+  const nombres = l.itemIds.map(id=>{
+    const it = getItem(id);
+    return it ? [it.tipo, it.marca||it.color].filter(Boolean).join(" · ") : id;
+  }).join(", ");
+  const acts = (l.actividades||[]).map(usoNombre).join(", ");
+  return `<div class="historial-item" data-id="${l.id}">
+    <span class="fecha mono">${fmtDate(l.fecha,{day:"2-digit",month:"2-digit"})}</span>
+    <span class="detalle"><b>${esc(acts)}</b> — ${esc(nombres)}</span>
+    <button data-edit="${l.id}" title="Editar">✎</button>
+    <button data-del="${l.id}" title="Eliminar">✕</button>
+  </div>`;
+}
+
+function wireHistorialButtons(scope){
+  scope.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",(e)=>{
+    e.stopPropagation();
+    startEditEntry(b.dataset.edit);
+  }));
+  scope.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",(e)=>{
     e.stopPropagation();
     confirmDialog("¿Eliminar este registro de uso?", ()=>{
       state.log = state.log.filter(l=>l.id!==b.dataset.del);
+      if(regEditingId===b.dataset.del){ regEditingId=null; }
       save();
       renderRegistro();
       toast("Registro eliminado");
@@ -641,14 +673,58 @@ function renderHistorialReciente(){
   }));
 }
 
+function startEditEntry(id){
+  const entry = state.log.find(l=>l.id===id);
+  if(!entry) return;
+  regEditingId = id;
+  regFecha = entry.fecha;
+  regActividadesSel = [...(entry.actividades||[])];
+  regItemsSel = [...(entry.itemIds||[])];
+  const firstItem = getItem(regItemsSel[0]);
+  regCategoriaTab = firstItem ? firstItem.categoria : "Arriba";
+  regTipoFiltro = null;
+  switchView("registro");
+  toast("Editando registro — hacé los cambios y guardá.");
+}
+
+function renderHistorialReciente(){
+  const lista = state.log.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,12);
+  const wrap = document.getElementById("reg-historial");
+  if(!lista.length){
+    wrap.innerHTML = `<p class="field-hint">Todavía no registraste ningún uso.</p>`;
+    return;
+  }
+  wrap.innerHTML = lista.map(historialItemHTML).join("");
+  wireHistorialButtons(wrap);
+}
+
 function wireRegistroStatic(){
   document.getElementById("reg-fecha").addEventListener("change", e=>{ regFecha = e.target.value; });
+  document.getElementById("btn-cancelar-edicion").addEventListener("click", ()=>{
+    regEditingId = null;
+    regItemsSel = [];
+    regActividadesSel = [];
+    regFecha = today();
+    toast("Edición cancelada");
+    renderRegistro();
+  });
   document.getElementById("btn-guardar-registro").addEventListener("click", ()=>{
     if(!regActividadesSel.length){ toast("Elegí al menos una actividad."); return; }
     if(!regItemsSel.length){ toast("Elegí al menos una prenda."); return; }
-    state.log.push({id:uid(), fecha:regFecha, actividades:[...regActividadesSel], itemIds:[...regItemsSel]});
+    if(regEditingId){
+      const entry = state.log.find(l=>l.id===regEditingId);
+      if(entry){
+        entry.fecha = regFecha;
+        entry.actividades = [...regActividadesSel];
+        entry.itemIds = [...regItemsSel];
+      }
+      toast("Registro actualizado ✓");
+    } else {
+      state.log.push({id:uid(), fecha:regFecha, actividades:[...regActividadesSel], itemIds:[...regItemsSel]});
+      toast("Registro guardado ✓");
+    }
     save();
-    toast("Registro guardado ✓");
+    regEditingId = null;
     regItemsSel = [];
     regActividadesSel = [];
     outfitActual = null;
@@ -797,11 +873,8 @@ function showDayDetail(fecha){
     return;
   }
   wrap.innerHTML = `<h4 style="font-size:13px; color:var(--ink-soft); margin-bottom:8px">${fmtDate(fecha)}</h4>` +
-    entries.map(l=>{
-      const nombres = l.itemIds.map(id=>{const it=getItem(id); return it?it.tipo:id;}).join(", ");
-      const acts = (l.actividades||[]).map(usoNombre).join(", ");
-      return `<div class="historial-item"><span class="detalle"><b>${esc(acts)}</b> — ${esc(nombres)}</span></div>`;
-    }).join("");
+    entries.map(historialItemHTML).join("");
+  wireHistorialButtons(wrap);
 }
 
 /* ============================================================
@@ -1116,7 +1189,9 @@ function openDetalle(id){
   });
   document.getElementById("btn-detalle-registrar").addEventListener("click", ()=>{
     closeModal("modal-detalle");
+    regEditingId = null;
     regItemsSel = [id];
+    regActividadesSel = [];
     regFecha = today();
     switchView("registro");
   });
