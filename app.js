@@ -120,21 +120,24 @@ function getTipo(nombre){ return state.tipos.find(t=>t.nombre===nombre); }
 function getUso(codigo){ return state.usos.find(u=>u.codigo===codigo); }
 function usoNombre(codigo){ const u = getUso(codigo); return u ? u.nombre : codigo; }
 
-function nextItemId(tipoNombre){
+function nextItemId(tipoNombre, excludeId){
   const tipo = getTipo(tipoNombre);
   let codTipo, codFormal;
   if(tipo){ codTipo = tipo.codTipo; codFormal = tipo.codFormal; }
   else { codTipo = Math.max(9, ...state.tipos.map(t=>t.codTipo||0)) + 1; codFormal = 1; }
   const prefix = `${codTipo}${codFormal}`;
-  let max = 0;
+  const usados = new Set();
   state.items.forEach(it=>{
+    if(excludeId && it.id===excludeId) return;
     if(it.id.startsWith(prefix)){
       const rest = it.id.slice(prefix.length);
       const n = parseInt(rest,10);
-      if(!isNaN(n)) max = Math.max(max, n);
+      if(!isNaN(n)) usados.add(n);
     }
   });
-  const seq = String(max+1).padStart(2,"0");
+  let seqNum = 1;
+  while(usados.has(seqNum)) seqNum++;
+  const seq = String(seqNum).padStart(2,"0");
   return `${prefix}${seq}`;
 }
 
@@ -449,6 +452,7 @@ function countDormidas(stats){
    ROPERO
    ============================================================ */
 let roperoFiltroCategoria = "todas";
+let roperoFiltroTipo = null;
 let roperoFiltroEstado = "activas";
 let roperoOrden = "reciente";
 let roperoBusqueda = "";
@@ -459,13 +463,36 @@ function renderRopero(){
   catWrap.innerHTML = `<span class="filtro-label">Categoría</span><div class="filtro-chips">${
     categorias.map(c=>`<button class="chip chip-filter ${roperoFiltroCategoria===c?"selected":""}" data-cat="${c}">${c==="todas"?"Todas":c}</button>`).join("")
   }</div>`;
+  catWrap.querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{
+    roperoFiltroCategoria=b.dataset.cat; roperoFiltroTipo=null; renderRopero();
+  }));
+
+  const baseParaTipos = state.items.filter(i=>{
+    if(roperoFiltroEstado==="activas" && !i.activo) return false;
+    if(roperoFiltroEstado==="inactivas" && i.activo) return false;
+    if(roperoFiltroCategoria!=="todas" && i.categoria!==roperoFiltroCategoria) return false;
+    return true;
+  });
+  const tiposDisponibles = [...new Set(baseParaTipos.map(i=>i.tipo))].sort((a,b)=>a.localeCompare(b));
+  const tipoWrap = document.getElementById("filtro-tipo");
+  if(tiposDisponibles.length > 1){
+    tipoWrap.innerHTML = `<span class="filtro-label">Tipo</span><div class="filtro-chips">` +
+      `<button class="chip chip-filter ${!roperoFiltroTipo?"selected":""}" data-tipof="">Todos</button>` +
+      tiposDisponibles.map(t=>`<button class="chip chip-filter ${roperoFiltroTipo===t?"selected":""}" data-tipof="${esc(t)}">${esc(t)}</button>`).join("") +
+      `</div>`;
+    tipoWrap.querySelectorAll("[data-tipof]").forEach(b=>b.addEventListener("click",()=>{
+      roperoFiltroTipo = b.dataset.tipof || null; renderRopero();
+    }));
+  } else {
+    tipoWrap.innerHTML = "";
+    if(tiposDisponibles.length===0) roperoFiltroTipo = null;
+  }
+
   const estWrap = document.getElementById("filtro-estado");
   const estados = [["activas","Activas"],["inactivas","Dadas de baja"],["todas","Todas"]];
   estWrap.innerHTML = `<span class="filtro-label">Estado</span><div class="filtro-chips">${
     estados.map(([v,l])=>`<button class="chip chip-filter ${roperoFiltroEstado===v?"selected":""}" data-est="${v}">${l}</button>`).join("")
   }</div>`;
-
-  catWrap.querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{ roperoFiltroCategoria=b.dataset.cat; renderRopero(); }));
   estWrap.querySelectorAll("[data-est]").forEach(b=>b.addEventListener("click",()=>{ roperoFiltroEstado=b.dataset.est; renderRopero(); }));
 
   document.getElementById("ropero-orden").value = roperoOrden;
@@ -474,6 +501,7 @@ function renderRopero(){
   if(roperoFiltroEstado==="activas") lista = lista.filter(i=>i.activo);
   else if(roperoFiltroEstado==="inactivas") lista = lista.filter(i=>!i.activo);
   if(roperoFiltroCategoria!=="todas") lista = lista.filter(i=>i.categoria===roperoFiltroCategoria);
+  if(roperoFiltroTipo) lista = lista.filter(i=>i.tipo===roperoFiltroTipo);
   if(roperoBusqueda.trim()){
     const q = roperoBusqueda.toLowerCase();
     lista = lista.filter(i => [i.tipo,i.marca,i.modelo,i.color,i.estampado].some(v=>v && v.toLowerCase().includes(q)));
@@ -1080,8 +1108,17 @@ function openItemForm(existingId){
       fotoUrl: fotoDataUrl
     };
     if(it){
+      const tipoAnterior = it.tipo;
+      const idAnterior = it.id;
       Object.assign(it, data);
-      toast("Prenda actualizada ✓");
+      if(tipoVal !== tipoAnterior){
+        const idNuevo = nextItemId(tipoVal, idAnterior);
+        it.id = idNuevo;
+        state.log.forEach(l=>{ l.itemIds = l.itemIds.map(x=> x===idAnterior ? idNuevo : x); });
+        toast(`Prenda actualizada — código ${idAnterior} → ${idNuevo} ✓`);
+      } else {
+        toast("Prenda actualizada ✓");
+      }
     } else {
       const newItem = Object.assign({
         id: nextItemId(tipoVal),
