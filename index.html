@@ -81,7 +81,7 @@
   <section id="view-registro" class="view">
     <div class="view-inner">
       <h1 class="view-title">Registrar uso</h1>
-      <p class="view-subtitle">Anotá qué te pusiste y para qué.</p>
+      <p class="view-subtitle">Agregá cada prenda que usaste este día y marcá para qué la usaste.</p>
 
       <div class="card form-card">
         <div id="reg-edit-banner" class="edit-banner hidden">
@@ -91,20 +91,11 @@
         <label class="field-label" for="reg-fecha">Fecha</label>
         <input type="date" id="reg-fecha" class="field-input">
 
-        <label class="field-label">Actividad</label>
-        <div id="reg-actividades" class="chip-row"></div>
+        <label class="field-label">Prendas de este día</label>
+        <div id="reg-day-rows" class="day-rows"></div>
+        <button id="btn-add-prenda-dia" class="btn-secondary btn-small" style="margin-top:4px">+ Agregar prenda</button>
 
-        <label class="field-label">Prendas usadas</label>
-        <div id="reg-categorias-tabs" class="subtabs"></div>
-        <div id="reg-tipo-filtro" class="chip-row chip-row-tight"></div>
-        <div id="reg-items-picker" class="picker-list"></div>
-
-        <div class="seleccionados" id="reg-seleccionados-wrap" style="display:none">
-          <span class="field-label" style="margin:0">Seleccionado:</span>
-          <div id="reg-seleccionados" class="selected-chips"></div>
-        </div>
-
-        <button id="btn-guardar-registro" class="btn-primary" style="margin-top:18px">Guardar registro</button>
+        <button id="btn-guardar-registro" class="btn-primary" style="margin-top:18px">Guardar día</button>
       </div>
 
       <h2 class="section-title" style="margin-top:28px">Historial reciente</h2>
@@ -210,6 +201,22 @@
       <button class="icon-btn" id="modal-item-close" aria-label="Cerrar">✕</button>
     </div>
     <div class="modal-body" id="modal-item-body"></div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: agregar prenda al día ===================== -->
+<div id="modal-pick-item" class="modal-overlay hidden">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2>Elegí una prenda</h2>
+      <button class="icon-btn" id="modal-pick-close" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="pick-categorias-tabs" class="subtabs"></div>
+      <div id="pick-tipo-filtro" class="chip-row chip-row-tight"></div>
+      <div id="pick-items-list" class="picker-list"></div>
+    </div>
   </div>
 </div>
 

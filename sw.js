@@ -1,7 +1,7 @@
 // Service worker de Vestidor — estrategia stale-while-revalidate.
 // IMPORTANTE: subí CACHE_VERSION cada vez que publiques cambios,
 // si no el navegador puede seguir sirviendo archivos viejos desde caché.
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const CACHE_NAME = `vestidor-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

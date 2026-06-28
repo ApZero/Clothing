@@ -581,93 +581,113 @@ function esc(s){
    REGISTRO (registrar uso de hoy / cualquier fecha)
    ============================================================ */
 let regFecha = today();
-let regActividadesSel = [];
-let regCategoriaTab = "Arriba";
-let regTipoFiltro = null;
-let regItemsSel = [];
+let regDayRows = []; // [{itemId, actividades:[codigo,...]}]
 let regEditingId = null;
+let pickCategoriaTab = "Arriba";
+let pickTipoFiltro = null;
 
 function renderRegistro(){
   document.getElementById("reg-fecha").value = regFecha;
 
   const banner = document.getElementById("reg-edit-banner");
   banner.classList.toggle("hidden", !regEditingId);
-  document.getElementById("btn-guardar-registro").textContent = regEditingId ? "Guardar cambios" : "Guardar registro";
+  document.getElementById("btn-guardar-registro").textContent = regEditingId ? "Guardar cambios" : "Guardar día";
 
-  const actWrap = document.getElementById("reg-actividades");
-  actWrap.innerHTML = state.usos.map(u=>
-    `<button class="chip ${regActividadesSel.includes(u.codigo)?"selected":""}" data-act="${u.codigo}">${esc(u.nombre)}</button>`
-  ).join("") || `<span class="field-hint">Agregá actividades en Ajustes.</span>`;
-  actWrap.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",()=>{
-    const c = b.dataset.act;
-    const i = regActividadesSel.indexOf(c);
-    if(i>-1) regActividadesSel.splice(i,1); else regActividadesSel.push(c);
-    renderRegistro();
-  }));
+  const wrap = document.getElementById("reg-day-rows");
+  if(!regDayRows.length){
+    wrap.innerHTML = `<div class="day-rows-empty">Todavía no agregaste ninguna prenda.<br>Tocá "+ Agregar prenda" para empezar.</div>`;
+  } else {
+    wrap.innerHTML = regDayRows.map((row,idx)=>{
+      const it = getItem(row.itemId);
+      if(!it) return "";
+      const sub = [it.marca, it.color, it.talle].filter(Boolean).join(" · ") || "Sin más detalles";
+      const actChips = state.usos.map(u=>
+        `<button class="chip-sm ${row.actividades.includes(u.codigo)?"selected":""}" data-row="${idx}" data-act="${u.codigo}">${esc(u.nombre)}</button>`
+      ).join("");
+      return `<div class="day-row ${row.actividades.length?"":"sin-actividad"}" data-rowidx="${idx}">
+        <div class="thumb-sm">${it.fotoUrl?`<img src="${it.fotoUrl}" alt="">`:thumbPlaceholderSVG(it.categoria)}</div>
+        <div class="info">
+          <div class="top-line"><span class="tag-badge">${esc(it.id)}</span><span class="name">${esc(it.tipo)}</span></div>
+          <div class="sub">${esc(sub)}</div>
+          <div class="row-activities">${actChips}</div>
+        </div>
+        <button class="row-remove" data-removerow="${idx}" title="Quitar">✕</button>
+      </div>`;
+    }).join("");
+    wrap.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",()=>{
+      const idx = parseInt(b.dataset.row,10), code = b.dataset.act;
+      const row = regDayRows[idx];
+      const i = row.actividades.indexOf(code);
+      if(i>-1) row.actividades.splice(i,1); else row.actividades.push(code);
+      renderRegistro();
+    }));
+    wrap.querySelectorAll("[data-removerow]").forEach(b=>b.addEventListener("click",()=>{
+      regDayRows.splice(parseInt(b.dataset.removerow,10),1);
+      renderRegistro();
+    }));
+  }
 
+  renderHistorialReciente();
+}
+
+function openPickItemModal(){
+  renderPickItemModal();
+  openModal("modal-pick-item");
+}
+
+function renderPickItemModal(){
   const cats = ["Arriba","Abajo","Otro"];
-  document.getElementById("reg-categorias-tabs").innerHTML = cats.map(c=>
-    `<button class="subtab ${regCategoriaTab===c?"active":""}" data-tab="${c}">${c}</button>`
+  document.getElementById("pick-categorias-tabs").innerHTML = cats.map(c=>
+    `<button class="subtab ${pickCategoriaTab===c?"active":""}" data-tab="${c}">${c}</button>`
   ).join("");
-  document.getElementById("reg-categorias-tabs").querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
-    regCategoriaTab = b.dataset.tab; regTipoFiltro = null; renderRegistro();
+  document.getElementById("pick-categorias-tabs").querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
+    pickCategoriaTab = b.dataset.tab; pickTipoFiltro = null; renderPickItemModal();
   }));
 
   const tiposEnCategoria = [...new Set(
-    state.items.filter(i=>i.activo && i.categoria===regCategoriaTab).map(i=>i.tipo)
+    state.items.filter(i=>i.activo && i.categoria===pickCategoriaTab).map(i=>i.tipo)
   )].sort((a,b)=>a.localeCompare(b));
-  const tipoWrap = document.getElementById("reg-tipo-filtro");
+  const tipoWrap = document.getElementById("pick-tipo-filtro");
   if(tiposEnCategoria.length > 1){
-    tipoWrap.innerHTML = `<button class="chip-sm ${!regTipoFiltro?"selected":""}" data-tipo="">Todos</button>` +
-      tiposEnCategoria.map(t=>`<button class="chip-sm ${regTipoFiltro===t?"selected":""}" data-tipo="${esc(t)}">${esc(t)}</button>`).join("");
+    tipoWrap.innerHTML = `<button class="chip-sm ${!pickTipoFiltro?"selected":""}" data-tipo="">Todos</button>` +
+      tiposEnCategoria.map(t=>`<button class="chip-sm ${pickTipoFiltro===t?"selected":""}" data-tipo="${esc(t)}">${esc(t)}</button>`).join("");
     tipoWrap.querySelectorAll("[data-tipo]").forEach(b=>b.addEventListener("click",()=>{
-      regTipoFiltro = b.dataset.tipo || null; renderRegistro();
+      pickTipoFiltro = b.dataset.tipo || null; renderPickItemModal();
     }));
   } else {
     tipoWrap.innerHTML = "";
   }
 
   const stats = allStats();
-  let itemsCat = activeItems().filter(i=>i.categoria===regCategoriaTab);
-  if(regTipoFiltro) itemsCat = itemsCat.filter(i=>i.tipo===regTipoFiltro);
+  let itemsCat = activeItems().filter(i=>i.categoria===pickCategoriaTab);
+  if(pickTipoFiltro) itemsCat = itemsCat.filter(i=>i.tipo===pickTipoFiltro);
   itemsCat = itemsCat.sort((a,b)=> (stats[a.id].daysSince??99999) > (stats[b.id].daysSince??99999) ? -1 : 1);
-  const picker = document.getElementById("reg-items-picker");
-  picker.innerHTML = itemsCat.length ? itemsCat.map(it=>{
+  const yaAgregados = new Set(regDayRows.map(r=>r.itemId));
+  const list = document.getElementById("pick-items-list");
+  list.innerHTML = itemsCat.length ? itemsCat.map(it=>{
     const sub = [it.marca, it.color, it.talle].filter(Boolean).join(" · ") || "Sin más detalles";
     return `
-    <div class="picker-row ${regItemsSel.includes(it.id)?"selected":""}" data-id="${it.id}">
+    <div class="picker-row ${yaAgregados.has(it.id)?"selected":""}" data-id="${it.id}">
       <div class="thumb-sm">${it.fotoUrl?`<img src="${it.fotoUrl}" alt="">`:thumbPlaceholderSVG(it.categoria)}</div>
       <div class="info">
         <div class="top-line"><span class="tag-badge">${esc(it.id)}</span><span class="name">${esc(it.tipo)}</span></div>
         <div class="sub">${esc(sub)}</div>
       </div>
-      <div class="check">✓</div>
+      <div class="check">${yaAgregados.has(it.id)?"✓":""}</div>
     </div>`;
   }).join("") : `<span class="field-hint">No tenés prendas activas en esta categoría.</span>`;
-  picker.querySelectorAll(".picker-row").forEach(el=>el.addEventListener("click",()=>{
+  list.querySelectorAll(".picker-row").forEach(el=>el.addEventListener("click",()=>{
     const id = el.dataset.id;
-    const i = regItemsSel.indexOf(id);
-    if(i>-1) regItemsSel.splice(i,1); else regItemsSel.push(id);
+    if(yaAgregados.has(id)){
+      toast("Ya está en la lista de hoy — marcá sus actividades abajo.");
+      closeModal("modal-pick-item");
+      renderRegistro();
+      return;
+    }
+    regDayRows.push({itemId:id, actividades:[]});
+    closeModal("modal-pick-item");
     renderRegistro();
   }));
-
-  const wrap = document.getElementById("reg-seleccionados-wrap");
-  if(regItemsSel.length){
-    wrap.style.display = "block";
-    document.getElementById("reg-seleccionados").innerHTML = regItemsSel.map(id=>{
-      const it = getItem(id);
-      const etiqueta = it ? [it.tipo, it.marca||it.color].filter(Boolean).join(" · ") : id;
-      return `<span class="chip selected" data-remove="${id}">${esc(etiqueta)} ✕</span>`;
-    }).join("");
-    document.getElementById("reg-seleccionados").querySelectorAll("[data-remove]").forEach(el=>el.addEventListener("click",()=>{
-      regItemsSel = regItemsSel.filter(id=>id!==el.dataset.remove);
-      renderRegistro();
-    }));
-  } else {
-    wrap.style.display = "none";
-  }
-
-  renderHistorialReciente();
 }
 
 function historialItemHTML(l){
@@ -693,7 +713,7 @@ function wireHistorialButtons(scope){
     e.stopPropagation();
     confirmDialog("¿Eliminar este registro de uso?", ()=>{
       state.log = state.log.filter(l=>l.id!==b.dataset.del);
-      if(regEditingId===b.dataset.del){ regEditingId=null; }
+      if(regEditingId===b.dataset.del){ regEditingId=null; regDayRows=[]; }
       save();
       renderRegistro();
       toast("Registro eliminado");
@@ -706,13 +726,11 @@ function startEditEntry(id){
   if(!entry) return;
   regEditingId = id;
   regFecha = entry.fecha;
-  regActividadesSel = [...(entry.actividades||[])];
-  regItemsSel = [...(entry.itemIds||[])];
-  const firstItem = getItem(regItemsSel[0]);
-  regCategoriaTab = firstItem ? firstItem.categoria : "Arriba";
-  regTipoFiltro = null;
+  regDayRows = (entry.itemIds||[]).filter(itemId=>getItem(itemId)).map(itemId=>(
+    {itemId, actividades:[...(entry.actividades||[])]}
+  ));
   switchView("registro");
-  toast("Editando registro — hacé los cambios y guardá.");
+  toast("Editando registro — ajustá las prendas o actividades y guardá.");
 }
 
 function renderHistorialReciente(){
@@ -728,33 +746,31 @@ function renderHistorialReciente(){
 
 function wireRegistroStatic(){
   document.getElementById("reg-fecha").addEventListener("change", e=>{ regFecha = e.target.value; });
+  document.getElementById("btn-add-prenda-dia").addEventListener("click", openPickItemModal);
+  document.getElementById("modal-pick-close").addEventListener("click", ()=>closeModal("modal-pick-item"));
+  document.getElementById("modal-pick-item").addEventListener("click", (e)=>{
+    if(e.target.id==="modal-pick-item") closeModal("modal-pick-item");
+  });
   document.getElementById("btn-cancelar-edicion").addEventListener("click", ()=>{
     regEditingId = null;
-    regItemsSel = [];
-    regActividadesSel = [];
+    regDayRows = [];
     regFecha = today();
     toast("Edición cancelada");
     renderRegistro();
   });
   document.getElementById("btn-guardar-registro").addEventListener("click", ()=>{
-    if(!regActividadesSel.length){ toast("Elegí al menos una actividad."); return; }
-    if(!regItemsSel.length){ toast("Elegí al menos una prenda."); return; }
+    if(!regDayRows.length){ toast("Agregá al menos una prenda."); return; }
+    if(regDayRows.some(r=>!r.actividades.length)){ toast("Marcá al menos una actividad para cada prenda."); return; }
     if(regEditingId){
-      const entry = state.log.find(l=>l.id===regEditingId);
-      if(entry){
-        entry.fecha = regFecha;
-        entry.actividades = [...regActividadesSel];
-        entry.itemIds = [...regItemsSel];
-      }
-      toast("Registro actualizado ✓");
-    } else {
-      state.log.push({id:uid(), fecha:regFecha, actividades:[...regActividadesSel], itemIds:[...regItemsSel]});
-      toast("Registro guardado ✓");
+      state.log = state.log.filter(l=>l.id!==regEditingId);
     }
+    regDayRows.forEach(row=>{
+      state.log.push({id:uid(), fecha:regFecha, actividades:[...row.actividades], itemIds:[row.itemId]});
+    });
     save();
+    toast(regEditingId ? "Registro actualizado ✓" : "Día registrado ✓");
     regEditingId = null;
-    regItemsSel = [];
-    regActividadesSel = [];
+    regDayRows = [];
     outfitActual = null;
     renderRegistro();
   });
@@ -1227,9 +1243,8 @@ function openDetalle(id){
   document.getElementById("btn-detalle-registrar").addEventListener("click", ()=>{
     closeModal("modal-detalle");
     regEditingId = null;
-    regItemsSel = [id];
-    regActividadesSel = [];
     regFecha = today();
+    regDayRows = [{itemId:id, actividades:[]}];
     switchView("registro");
   });
   openModal("modal-detalle");
