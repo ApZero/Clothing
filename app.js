@@ -582,16 +582,26 @@ function esc(s){
    ============================================================ */
 let regFecha = today();
 let regDayRows = []; // [{itemId, actividades:[codigo,...]}]
-let regEditingId = null;
+let regEditingFecha = null; // fecha being replaced on save, or null = new day
+let diaExpandido = null;
 let pickCategoriaTab = "Arriba";
 let pickTipoFiltro = null;
+
+function loadDayIntoBuilder(fecha){
+  const entries = state.log.filter(l=>l.fecha===fecha);
+  regEditingFecha = fecha;
+  regFecha = fecha;
+  regDayRows = entries.flatMap(l=>
+    (l.itemIds||[]).filter(itemId=>getItem(itemId)).map(itemId=>({itemId, actividades:[...(l.actividades||[])]}))
+  );
+}
 
 function renderRegistro(){
   document.getElementById("reg-fecha").value = regFecha;
 
   const banner = document.getElementById("reg-edit-banner");
-  banner.classList.toggle("hidden", !regEditingId);
-  document.getElementById("btn-guardar-registro").textContent = regEditingId ? "Guardar cambios" : "Guardar día";
+  banner.classList.toggle("hidden", !regEditingFecha);
+  document.getElementById("btn-guardar-registro").textContent = regEditingFecha ? "Guardar cambios del día" : "Guardar día";
 
   const wrap = document.getElementById("reg-day-rows");
   if(!regDayRows.length){
@@ -690,69 +700,108 @@ function renderPickItemModal(){
   }));
 }
 
-function historialItemHTML(l){
+function entryLineHTML(l){
   const nombres = l.itemIds.map(id=>{
     const it = getItem(id);
     return it ? [it.tipo, it.marca||it.color].filter(Boolean).join(" · ") : id;
   }).join(", ");
   const acts = (l.actividades||[]).map(usoNombre).join(", ");
-  return `<div class="historial-item" data-id="${l.id}">
-    <span class="fecha mono">${fmtDate(l.fecha,{day:"2-digit",month:"2-digit"})}</span>
-    <span class="detalle"><b>${esc(acts)}</b> — ${esc(nombres)}</span>
-    <button data-edit="${l.id}" title="Editar">✎</button>
-    <button data-del="${l.id}" title="Eliminar">✕</button>
+  return `<div class="historial-item"><span class="detalle"><b>${esc(acts)}</b> — ${esc(nombres)}</span></div>`;
+}
+
+function groupLogByFecha(){
+  const map = {};
+  state.log.forEach(l=>{ (map[l.fecha] = map[l.fecha]||[]).push(l); });
+  return Object.entries(map).sort((a,b)=>b[0].localeCompare(a[0]));
+}
+
+function startEditDay(fecha){
+  loadDayIntoBuilder(fecha);
+  switchView("registro");
+  toast("Editando el día — ajustá las prendas o actividades y guardá.");
+}
+
+function confirmDeleteDay(fecha){
+  confirmDialog(`¿Eliminar todos los registros del ${fmtDate(fecha)}?`, ()=>{
+    state.log = state.log.filter(l=>l.fecha!==fecha);
+    if(regEditingFecha===fecha){ regEditingFecha=null; regDayRows=[]; }
+    save();
+    renderRegistro();
+    renderCalendar();
+    toast("Registros del día eliminados");
+  });
+}
+
+function dayGroupHTML(fecha, entries){
+  const totalPrendas = entries.reduce((s,l)=>s+l.itemIds.length,0);
+  const actividadesSet = [...new Set(entries.flatMap(l=>l.actividades||[]))].map(usoNombre);
+  const expanded = diaExpandido === fecha;
+  return `<div class="day-group" data-fecha="${fecha}">
+    <div class="day-group-header" data-toggle="${fecha}">
+      <div class="day-group-main">
+        <span class="fecha">${fmtDate(fecha,{weekday:"short", day:"2-digit", month:"short"})}</span>
+        <span class="day-summary">${totalPrendas} prenda${totalPrendas===1?"":"s"} · ${esc(actividadesSet.join(", "))}</span>
+      </div>
+      <button data-editday="${fecha}" title="Editar día">✎</button>
+      <button data-delday="${fecha}" title="Eliminar día">✕</button>
+      <span class="chevron ${expanded?"open":""}">⌄</span>
+    </div>
+    <div class="day-group-detail ${expanded?"":"hidden"}">
+      ${entries.map(entryLineHTML).join("")}
+    </div>
   </div>`;
 }
 
-function wireHistorialButtons(scope){
-  scope.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",(e)=>{
-    e.stopPropagation();
-    startEditEntry(b.dataset.edit);
+function wireDayGroups(scope){
+  scope.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click",(e)=>{
+    if(e.target.closest("[data-editday],[data-delday]")) return;
+    const fecha = el.dataset.toggle;
+    diaExpandido = (diaExpandido===fecha) ? null : fecha;
+    renderHistorialReciente();
   }));
-  scope.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",(e)=>{
+  scope.querySelectorAll("[data-editday]").forEach(b=>b.addEventListener("click",(e)=>{
     e.stopPropagation();
-    confirmDialog("¿Eliminar este registro de uso?", ()=>{
-      state.log = state.log.filter(l=>l.id!==b.dataset.del);
-      if(regEditingId===b.dataset.del){ regEditingId=null; regDayRows=[]; }
-      save();
-      renderRegistro();
-      toast("Registro eliminado");
-    });
+    startEditDay(b.dataset.editday);
   }));
-}
-
-function startEditEntry(id){
-  const entry = state.log.find(l=>l.id===id);
-  if(!entry) return;
-  regEditingId = id;
-  regFecha = entry.fecha;
-  regDayRows = (entry.itemIds||[]).filter(itemId=>getItem(itemId)).map(itemId=>(
-    {itemId, actividades:[...(entry.actividades||[])]}
-  ));
-  switchView("registro");
-  toast("Editando registro — ajustá las prendas o actividades y guardá.");
+  scope.querySelectorAll("[data-delday]").forEach(b=>b.addEventListener("click",(e)=>{
+    e.stopPropagation();
+    confirmDeleteDay(b.dataset.delday);
+  }));
 }
 
 function renderHistorialReciente(){
-  const lista = state.log.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,12);
+  const grupos = groupLogByFecha().slice(0,15);
   const wrap = document.getElementById("reg-historial");
-  if(!lista.length){
+  if(!grupos.length){
     wrap.innerHTML = `<p class="field-hint">Todavía no registraste ningún uso.</p>`;
     return;
   }
-  wrap.innerHTML = lista.map(historialItemHTML).join("");
-  wireHistorialButtons(wrap);
+  wrap.innerHTML = grupos.map(([fecha,entries])=>dayGroupHTML(fecha,entries)).join("");
+  wireDayGroups(wrap);
 }
 
 function wireRegistroStatic(){
-  document.getElementById("reg-fecha").addEventListener("change", e=>{ regFecha = e.target.value; });
+  document.getElementById("reg-fecha").addEventListener("change", e=>{
+    const nuevaFecha = e.target.value;
+    if(!regEditingFecha && regDayRows.length===0){
+      const existentes = state.log.filter(l=>l.fecha===nuevaFecha);
+      if(existentes.length){
+        loadDayIntoBuilder(nuevaFecha);
+        toast("Ese día ya tenía registros — los cargué para que los edites o sumes más.");
+        renderRegistro();
+        return;
+      }
+    }
+    regFecha = nuevaFecha;
+    renderRegistro();
+  });
   document.getElementById("btn-add-prenda-dia").addEventListener("click", openPickItemModal);
   document.getElementById("modal-pick-close").addEventListener("click", ()=>closeModal("modal-pick-item"));
   document.getElementById("modal-pick-item").addEventListener("click", (e)=>{
     if(e.target.id==="modal-pick-item") closeModal("modal-pick-item");
   });
   document.getElementById("btn-cancelar-edicion").addEventListener("click", ()=>{
-    regEditingId = null;
+    regEditingFecha = null;
     regDayRows = [];
     regFecha = today();
     toast("Edición cancelada");
@@ -761,16 +810,17 @@ function wireRegistroStatic(){
   document.getElementById("btn-guardar-registro").addEventListener("click", ()=>{
     if(!regDayRows.length){ toast("Agregá al menos una prenda."); return; }
     if(regDayRows.some(r=>!r.actividades.length)){ toast("Marcá al menos una actividad para cada prenda."); return; }
-    if(regEditingId){
-      state.log = state.log.filter(l=>l.id!==regEditingId);
+    if(regEditingFecha){
+      state.log = state.log.filter(l=>l.fecha!==regEditingFecha);
     }
     regDayRows.forEach(row=>{
       state.log.push({id:uid(), fecha:regFecha, actividades:[...row.actividades], itemIds:[row.itemId]});
     });
     save();
-    toast(regEditingId ? "Registro actualizado ✓" : "Día registrado ✓");
-    regEditingId = null;
+    toast(regEditingFecha ? "Día actualizado ✓" : "Día registrado ✓");
+    regEditingFecha = null;
     regDayRows = [];
+    diaExpandido = regFecha;
     outfitActual = null;
     renderRegistro();
   });
@@ -916,9 +966,16 @@ function showDayDetail(fecha){
     wrap.innerHTML = `<p class="field-hint">Sin registros el ${fmtDate(fecha)}.</p>`;
     return;
   }
-  wrap.innerHTML = `<h4 style="font-size:13px; color:var(--ink-soft); margin-bottom:8px">${fmtDate(fecha)}</h4>` +
-    entries.map(historialItemHTML).join("");
-  wireHistorialButtons(wrap);
+  wrap.innerHTML = `
+    <div class="day-detail-header">
+      <h4>${fmtDate(fecha)}</h4>
+      <div class="day-detail-actions">
+        <button data-editday="${fecha}" class="text-link">Editar día</button>
+        <button data-delday="${fecha}" class="text-link" style="color:var(--rust)">Eliminar</button>
+      </div>
+    </div>` +
+    entries.map(entryLineHTML).join("");
+  wireDayGroups(wrap);
 }
 
 /* ============================================================
@@ -1242,7 +1299,7 @@ function openDetalle(id){
   });
   document.getElementById("btn-detalle-registrar").addEventListener("click", ()=>{
     closeModal("modal-detalle");
-    regEditingId = null;
+    regEditingFecha = null;
     regFecha = today();
     regDayRows = [{itemId:id, actividades:[]}];
     switchView("registro");
